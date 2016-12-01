@@ -18,7 +18,7 @@
 #define FILE_NAME_SIZE 30
 #define PROC_NAME_SIZE 30
 #define ARG_NAME_SIZE 30
-#define PIPE_SIZE 30
+#define PIPE_SIZE 300
 
 
 
@@ -37,6 +37,11 @@ struct dsm_proc {
   dsm_proc_conn_t connect_info;
 };
 typedef struct dsm_proc dsm_proc_t;
+
+struct pipe_tab  {
+   int pipefd[2];
+};
+typedef struct pipe_tab pipe_tab_t;
 
 // Gestion fichiers
 int count_line(char * filename);

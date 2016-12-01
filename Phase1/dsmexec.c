@@ -7,7 +7,7 @@
 dsm_proc_t *proc_array = NULL;
 
 /* le nombre de processus effectivement crees */
-volatile int num_procs_creat = 0;
+volatile int num_procs_create = 0;
 
 void usage(void)
 {
@@ -33,26 +33,25 @@ int main(int argc, char *argv[])
       /*************************************************************/
      pid_t pid;
      int num_procs = 0;
-     int i;
+     int i,j,k;
      /* ------ EXTRACT ARGV DATA-------*/
      char file_name[FILE_NAME_SIZE];
      strcpy(file_name,argv[1]);
      char proc_name[PROC_NAME_SIZE];
      strcpy(proc_name,argv[2]);
 
-     /* ------INIT PIPELINE-------*/
-     int pipe_stdout[2], pipe_stderr[2];
-     /* creation du tube pour rediriger stdout */
-     pipe(pipe_stdout);
-     /* creation du tube pour rediriger stderr */
-     pipe(pipe_stderr);
      /* buffer pour les pipes */
      char buffer[PIPE_SIZE];
+
 
      /* -------socket---------*/
      struct sockaddr_in serv_addr;
      int master_sockfd;
      socklen_t len = sizeof(serv_addr);
+
+      /* -------poll---------*/
+     int timeout_msecs = -1;
+     int ret;
 
 
      /*************************************************************/
@@ -71,6 +70,20 @@ int main(int argc, char *argv[])
      dsm_proc_conn_t machine_tab[num_procs];
      init_machine_tab(file_name, machine_tab, num_procs);
      print_machine_tab(machine_tab, num_procs);
+
+
+
+     /*************************************************************/
+     /*              création des tableaux de pipe                */
+     /*************************************************************/
+     pipe_tab_t pipe_err_tab[num_procs];
+     pipe_tab_t pipe_stdout_tab[num_procs];
+
+     /*************************************************************/
+     /*             création de poll                */
+     /*************************************************************/
+     printf("IL y a %i fd écouté\n",num_procs*2 );
+      struct pollfd fds[num_procs*2];
 
 
      /*************************************************************/
@@ -97,51 +110,98 @@ int main(int argc, char *argv[])
      /*************************************************************/
      for(i = 0; i < num_procs ; i++) {
 
+         /* creation du tube pour rediriger stdout */ //TODO faire dees if sur les pipes
+         pipe(pipe_stdout_tab[i].pipefd);
+         /* creation du tube pour rediriger stderr */
+         pipe(pipe_err_tab[i].pipefd);
+
     	 pid = fork();
     	 if(pid == -1) ERROR_EXIT("fork");
 
-    	 if (pid == 0) { /* fils */
-            close(pipe_stderr[0]);
-            close(pipe_stdout[0]);
-      	    /* redirection stdout */
-            dup2(pipe_stdout[1],STDOUT_FILENO); //  stdout becomes the synonymous with pipe_stdout[1] ;
-      	    /* redirection stderr */
-            dup2(pipe_stderr[1],STDERR_FILENO);
+         /*********************************/
+         /*           fils                */
+         /*********************************/
+    	 if (pid == 0) {
+            sleep(i);
+            printf("\nPROCESSUS [%i]\n",getpid() );
+            close(pipe_err_tab[i].pipefd[0]);
+            close(pipe_stdout_tab[i].pipefd[0]);
+            printf("1) Fermeture de %i et %i\n",pipe_stdout_tab[i].pipefd[0],pipe_err_tab[i].pipefd[0]);
 
-           printf("Gestion des pipes : ok\n");
+            for (j=0; j<i ;j++){
+                close(pipe_err_tab[j].pipefd[0]);
+                close(pipe_stdout_tab[j].pipefd[0]);
+                printf("2) Et fermeture de %i et %i\n",pipe_err_tab[j].pipefd[0],pipe_stdout_tab[j].pipefd[0]);
+            }
+      	    /* redirection stdout */
+            dup2(pipe_stdout_tab[i].pipefd[1],STDOUT_FILENO); //  stdout becomes the synonymous with pipe_stdout[1] ;
+      	    /* redirection stderr */
+            dup2(pipe_err_tab[i].pipefd[1],STDERR_FILENO);
+            printf("--------> Gestion des pipes : ok\n");
+
+
       	   /* Creation du tableau d'arguments pour le ssh */ // TODO faire une fonction
-           char *newargv[argc-1];
+           printf("taille du tableau %i\n", argc-1 );
+           char *newargv[argc-2];
            /* First arg is the proc name */
            newargv[0] = argv[2];
            /* Last arg is NULL */
-           newargv[argc-1] = NULL;
+           newargv[argc-2] = NULL;
             /* Store the arg in a table newargv */
            if (argc > 3){
-               for(i=0; i < argc-3; i++) {
-                  newargv[i+1] =argv[i+3];
+               for(k=0; k < argc-3; k++) {
+                  newargv[k+1] =argv[k+3];
               }
            }
-           printf("Tableau argument: ok\n");
+           /*
+           for (k=0;k<= argc-2; k++) {
+               if(newargv[k]== NULL)
+                printf("arg [%i] -> NULL\n", k);
+               else
+                printf("arg [%i] = %s\n",k,newargv[k]);
+            }
 
-           if ( execvp(newargv[0],newargv) )
+           printf("-------->tableau argument: ok\n");
+           */
+           /*
+           if ( execlp("echo","echo","patate",NULL)) {
+                printf("execl failed with error %d %s\n",errno,strerror(errno));
+                return 0;
+            } */ //TODO
+
+
+
+           if ( execvp(newargv[0],newargv) ) {
                 printf("execv failed with error %d %s\n",errno,strerror(errno));
+                return 0;
+            }
 
-      	} else  if(pid > 0) { /* pere */
+
+        /*********************************/
+        /*            Pere               */
+        /*********************************/
+      	} else  if(pid > 0) {
       	   /* fermeture des extremites des tubes non utiles */
-           close(pipe_stderr[1]);
-           close(pipe_stdout[1]);
+           printf(" [%i] fd du pere sur err%i , fd du pere sur stdout%i\n", i, pipe_err_tab[i].pipefd[1],pipe_stdout_tab[i].pipefd[1]);
+           close(pipe_err_tab[i].pipefd[1]);
+           close(pipe_stdout_tab[i].pipefd[1]);
+
 
            // TODO enlever
 
-           char buffer[PIPE_SIZE];
-           read(pipe_stdout[0],buffer,PIPE_SIZE);
-           printf("%s\n",buffer );
 
-      	   num_procs_creat++; // TODO wait
+
+           /* initialisation de poll */
+           fds[i].fd = pipe_stdout_tab[i].pipefd[0];
+           fds[i+num_procs].fd = pipe_err_tab[i].pipefd[0];
+           printf("fds[i+num_procs].fd = %i\n", fds[i+num_procs].fd);
+           fds[i].events = POLLIN;
+           fds[i+num_procs].events = POLLIN;
+
+      	   num_procs_create++; // TODO wait
         }
      }
 
-     printf("MY PID: %i \n", getpid());
      for(i = 0; i < num_procs ; i++){
 
 	/* on accepte les connexions des processus dsm */
@@ -164,20 +224,72 @@ int main(int argc, char *argv[])
 
      /* gestion des E/S : on recupere les caracteres */
      /* sur les tubes de redirection de stdout/stderr */
-     /* while(1)
-         {
-            je recupere les infos sur les tubes de redirection
-            jusqu'à ce qu'ils soient inactifs (ie fermes par les
-            processus dsm ecrivains de l'autre cote ...)
+     while(1) {
+         ret = poll(fds, num_procs_create, timeout_msecs);
+         if (ret > 0) {
+              /* An event on one of the fds has occurred for stdout. */
+              for (i=0; i< num_procs_create; i++) {
+                  if (fds[i].revents & POLLIN) {
+                      memset(&buffer,'\0',PIPE_SIZE);
+                      read(pipe_stdout_tab[i].pipefd[0],buffer,PIPE_SIZE);
+                      fprintf(stdout, "[proc %i : %s: stdout] %s\n", i, machine_tab[i].name,buffer);
+                 }
+             }
+         }
 
-         };
-      */
+
+         ret = poll(fds+num_procs_create, num_procs_create, timeout_msecs);
+         if (ret > 0) {
+            /* An event on one of the fds has occurred for stderr. */
+            for (i=num_procs_create; i< 2*num_procs_create; i++) {
+                if (fds[i].revents & POLLIN) {
+                    memset(&buffer,'\0',PIPE_SIZE);
+                    read(pipe_err_tab[i-num_procs].pipefd[0],buffer,PIPE_SIZE);
+                    fprintf(stdout, "[proc %i : %s: stderr] %s\n", i-num_procs, machine_tab[i - num_procs].name, buffer);
+                }
+            }
+        }
+
+    }
+
 
      /* on attend les processus fils */
-
+     for (i=0; i<num_procs_create; i++){
+         wait(NULL);
+     }
+     printf("-------> Wait des fils : ok\n");
      /* on ferme les descripteurs proprement */
+     /*for (i=0; i<num_procs_create; i++){
+         close(pipe_err_tab[i].pipefd[0]);
+         close(pipe_stdout_tab[i].pipefd[0]);
+         printf("Pere : fermeture de %i et %i\n",pipe_err_tab[j].pipefd[0],pipe_stdout_tab[j].pipefd[0]);
+     }*/
 
      /* on ferme la socket d'ecoute */
   }
    exit(EXIT_SUCCESS);
 }
+
+/*ret = poll(fds, num_procs_create*, timeout_msecs);
+if (ret > 0) {
+     // An event on one of the fds has occurred.
+     for (i=0; i< 2*num_procs_create; i++) {
+         if (fds[i].revents & POLLIN) {
+
+             memset(&buffer,'\0',PIPE_SIZE);
+
+
+
+             //read(pipe_stdout_tab[i].pipefd[0],buffer,PIPE_SIZE);
+             if (i<num_procs_create){
+                 read(pipe_stdout_tab[i].pipefd[0],buffer,PIPE_SIZE);
+                 fprintf(stdout, "[proc %i : %s: stdout] %s\n", i, machine_tab[i].name,buffer);
+            } else {
+                read(pipe_err_tab[i-num_procs].pipefd[0],buffer,PIPE_SIZE);
+                fprintf(stdout, "[proc %i : %s: stderr] %s\n", i-num_procs, machine_tab[i - num_procs].name, buffer);
+
+            }
+        }
+    }
+
+}/*/
