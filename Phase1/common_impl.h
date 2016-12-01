@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <errno.h>
@@ -9,7 +10,10 @@
 #include <fcntl.h>
 #include <sys/poll.h>
 #include <netinet/in.h>
+#include <netdb.h>
 #include <errno.h>
+#include <arpa/inet.h>
+
 
 /* autres includes (eventuellement) */
 
@@ -54,3 +58,5 @@ int create_socket();
 void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr);
 void do_send(int sockfd, char *buffer, int buffer_size);
 int do_recv(int sockfd, char *buffer, int buffer_size);
+int do_accept(int sockfd, struct sockaddr *address, socklen_t *address_len);
+int do_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen);

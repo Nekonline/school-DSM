@@ -101,8 +101,48 @@ int main(int argc, char *argv[])
 
      if (getsockname(master_sockfd, (struct sockaddr *)&serv_addr, &len) == -1){
         ERROR_EXIT("getsockname");
-     } else
-        printf("port number %d\n", ntohs(serv_addr.sin_port));
+    } else{
+
+
+        // je declare une chaine de caractere pour l'affichage en utilisant inet_ntop
+        // la deuxieme pour le sprintf
+        char str_ip_adress[15],str_port[15];
+        // ici on a pas encore récupéré l'adresse ip donc affichage -> 0
+        printf("port number %d et adresse ip %s\n ", ntohs(serv_addr.sin_port),inet_ntop(AF_INET, &(serv_addr.sin_addr), str_ip_adress, 15));
+
+
+        // 2 methodes que j'ai faites, choisis celle que tu préfères
+        // on decalre une struct hostent  obligatoire pour utiliser gethostbyname
+        struct hostent *he;
+        // ic il faut utiliser localhost ou nom_de_la machien TODO a verifier
+        he=gethostbyname("localhost");
+
+        //je suis obligé de caster tu peux tester sans caster avec int ou unsigned int pas le meme resulat TODO a verifier
+        serv_addr.sin_addr.s_addr=(long)he->h_addr_list[0];
+
+        inet_ntop(AF_INET, &(serv_addr.sin_addr), str_ip_adress, 15);
+        printf(" WOOOOOOOOOOOOOOOO     %s\n", str_ip_adress);
+
+        //convertit le port en chaine de caracteres;
+        sprintf(str_port,"%d",ntohs(serv_addr.sin_port));
+        printf(" BIATCH %s\n", str_port);
+
+
+        struct hostent *lh = gethostbyname("localhost");
+        struct in_addr **addr_list;
+
+
+        addr_list=(struct in_addr **)lh->h_addr_list;
+
+        serv_addr.sin_addr.s_addr=(long)addr_list[0];
+
+        // converts the ip adress to string
+        inet_ntop(AF_INET, &(serv_addr.sin_addr), str_ip_adress, 15);
+
+        printf(" WAAAAAAAAAAAAAAA      %s\n", str_ip_adress); // prints "192.0.2.33"
+        return 0;
+
+    }
 
 
      /*************************************************************/
@@ -142,6 +182,8 @@ int main(int argc, char *argv[])
 
       	   /* Creation du tableau d'arguments pour le ssh */ // TODO faire une fonction
            printf("taille du tableau %i\n", argc-1 );
+
+           /* version 1*/
            char *newargv[argc-2];
            /* First arg is the proc name */
            newargv[0] = argv[2];
@@ -153,6 +195,37 @@ int main(int argc, char *argv[])
                   newargv[k+1] =argv[k+3];
               }
            }
+
+           /****************************/
+           /* version pouyr le dsmwrap*/
+           /***************************/
+
+           //TODO recuperer tous les arguments mtn qu'on les a en chaine de caractere;
+
+           /*char *newargv1[argc-1];
+
+           newargv1[0] = argv[1];
+
+           newargv1[argc-1] = NULL;
+
+           for(k=0; k < argc-1; k++) {
+              newargv1[k+1] =argv[k+1];
+          }
+
+          for (k=0;k<= argc-2; k++) {
+              if(newargv[k]== NULL)
+               printf("arg [%i] -> NULL\n", k);
+              else
+               printf("arg [%i] = %s\n",k,newargv1[k]);
+
+           }
+           */
+
+
+
+
+
+
            /*
            for (k=0;k<= argc-2; k++) {
                if(newargv[k]== NULL)
@@ -168,6 +241,8 @@ int main(int argc, char *argv[])
                 printf("execl failed with error %d %s\n",errno,strerror(errno));
                 return 0;
             } */ //TODO
+
+
 
 
 
@@ -203,6 +278,11 @@ int main(int argc, char *argv[])
      }
 
      for(i = 0; i < num_procs ; i++){
+
+         //TODO a continuer
+         // int new_sock = do_accept(sock, (struct sockaddr*)&serv_addr, &sizeserv_addr);
+
+
 
 	/* on accepte les connexions des processus dsm */
 

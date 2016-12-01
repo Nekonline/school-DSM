@@ -113,3 +113,18 @@ int do_recv(int sockfd, char *buffer, int buffer_size) {
 
   return progress;
 }
+
+
+int do_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen){
+
+	int res=connect(sockfd,addr,addrlen);
+	while (res!=0){
+		res=connect(sockfd,addr,addrlen);
+	}
+}
+
+
+int do_accept(int sockfd, struct sockaddr *address, socklen_t *address_len){
+    int new_sock=accept(socket,address,address_len);
+    return new_sock;
+}
