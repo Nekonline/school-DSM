@@ -7,6 +7,9 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <sys/poll.h>
+#include <netinet/in.h>
+#include <errno.h>
 
 /* autres includes (eventuellement) */
 
@@ -15,6 +18,8 @@
 #define FILE_NAME_SIZE 30
 #define PROC_NAME_SIZE 30
 #define ARG_NAME_SIZE 30
+#define PIPE_SIZE 30
+
 
 
 /* definition du type des infos */
@@ -33,7 +38,14 @@ struct dsm_proc {
 };
 typedef struct dsm_proc dsm_proc_t;
 
-int creer_socket(int type, int *port_num);
+// Gestion fichiers
 int count_line(char * filename);
 void init_machine_tab(char * filemane, dsm_proc_conn_t *machine_tab, int nb_machine);
 void print_machine_tab(dsm_proc_conn_t *machine_tab, int nb_machine);
+
+// Gestion IP
+void init_serv_address(struct sockaddr_in *serv_addr_ptr);
+int create_socket();
+void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr);
+void do_send(int sockfd, char *buffer, int buffer_size);
+int do_recv(int sockfd, char *buffer, int buffer_size);

@@ -28,41 +28,74 @@ int main(int argc, char *argv[])
   if (argc < 3){
     usage();
   } else {
+      /*************************************************************/
+      /*              Initialisation des variables                 */
+      /*************************************************************/
      pid_t pid;
      int num_procs = 0;
      int i;
-     // Extract argv
+     /* ------ EXTRACT ARGV DATA-------*/
      char file_name[FILE_NAME_SIZE];
      strcpy(file_name,argv[1]);
      char proc_name[PROC_NAME_SIZE];
      strcpy(proc_name,argv[2]);
 
-     /* Mise en place d'un traitant pour recuperer les fils zombies*/
+     /* ------INIT PIPELINE-------*/
+     int pipe_stdout[2], pipe_stderr[2];
+     /* creation du tube pour rediriger stdout */
+     pipe(pipe_stdout);
+     /* creation du tube pour rediriger stderr */
+     pipe(pipe_stderr);
+     /* buffer pour les pipes */
+     char buffer[PIPE_SIZE];
+
+     /* -------socket---------*/
+     struct sockaddr_in serv_addr;
+     int master_sockfd;
+     socklen_t len = sizeof(serv_addr);
+
+
+     /*************************************************************/
+     /*Mise en place d'un traitant pour recuperer les fils zombies*/ //TODO
+     /*************************************************************/
      /* XXX.sa_handler = sigchld_handler; */
 
-     /* lecture du fichier de machines */
 
+     /*************************************************************/
+     /*             lecture du fichier de machines                */
+     /*************************************************************/
      /* 1- on recupere le nombre de processus a lancer */
      num_procs=count_line(file_name);
-     printf("%i\n",num_procs );
-      /* 2- on recupere les noms des machines : le nom de */
-      dsm_proc_conn_t machine_tab[num_procs];
-      init_machine_tab(file_name, machine_tab, num_procs);
-      print_machine_tab(machine_tab, num_procs);
+     printf("Le fichier %s contient %i machines.\n", file_name, num_procs );
+     /* 2- on recupere les noms des machines et leur rang dans un tableau de strucure  */
+     dsm_proc_conn_t machine_tab[num_procs];
+     init_machine_tab(file_name, machine_tab, num_procs);
+     print_machine_tab(machine_tab, num_procs);
 
-     /* la machine est un des elements d'identification */
 
+     /*************************************************************/
+     /*            socket - création, bind, listen...             */
+     /*************************************************************/
+
+     init_serv_address(&serv_addr);
      /* creation de la socket d'ecoute */
+     master_sockfd = create_socket();
+     /* bind - choix du port non determiné */
+     do_bind(master_sockfd, &serv_addr);
      /* + ecoute effective */
+     if(listen(master_sockfd, num_procs) < 0)
+         ERROR_EXIT("Error - listen");
 
-     /* creation des fils */
+     if (getsockname(master_sockfd, (struct sockaddr *)&serv_addr, &len) == -1){
+        ERROR_EXIT("getsockname");
+     } else
+        printf("port number %d\n", ntohs(serv_addr.sin_port));
+
+
+     /*************************************************************/
+     /*                   creation des fils                       */
+     /*************************************************************/
      for(i = 0; i < num_procs ; i++) {
-         int pipe_stdout[2]; // TODO mettre a l'initialisation
-         int pipe_stderr[2];
-         /* creation du tube pour rediriger stdout */
-         pipe(pipe_stdout);
-         /* creation du tube pour rediriger stderr */
-         pipe(pipe_stderr);
 
     	 pid = fork();
     	 if(pid == -1) ERROR_EXIT("fork");
@@ -70,30 +103,28 @@ int main(int argc, char *argv[])
     	 if (pid == 0) { /* fils */
             close(pipe_stderr[0]);
             close(pipe_stdout[0]);
-      	   /* redirection stdout */
-           dup2(pipe_stdout[1],STDOUT_FILENO); //  stdout becomes the synonymous with pipe_stdout[1] ;
-      	   /* redirection stderr */
-           dup2(pipe_stderr[1],STDERR_FILENO);
-      	   /* Creation du tableau d'arguments pour le ssh */
+      	    /* redirection stdout */
+            dup2(pipe_stdout[1],STDOUT_FILENO); //  stdout becomes the synonymous with pipe_stdout[1] ;
+      	    /* redirection stderr */
+            dup2(pipe_stderr[1],STDERR_FILENO);
 
-
-           // TODO faire une fonction
-           char newargv[argc-2][ARG_NAME_SIZE];      // TODO assert PROC_NAME_SIZE<ARG_NAME_SIZE
-           strcpy(newargv[0], argv[2]); // First arg is the proc name
-           // Store the arg in a table newargv
+           printf("Gestion des pipes : ok\n");
+      	   /* Creation du tableau d'arguments pour le ssh */ // TODO faire une fonction
+           char *newargv[argc-1];
+           /* First arg is the proc name */
+           newargv[0] = argv[2];
+           /* Last arg is NULL */
+           newargv[argc-1] = NULL;
+            /* Store the arg in a table newargv */
            if (argc > 3){
                for(i=0; i < argc-3; i++) {
-                  strcpy(newargv[i+1], argv[i+3]);
+                  newargv[i+1] =argv[i+3];
               }
            }
+           printf("Tableau argument: ok\n");
 
-
-
-      	   /* jump to new prog : */
-      	   execvp(argv[2],newargv);
-           //execlp(argv[],"echo","le concombre c'est tabou",NULL);
-           //execlp("ssh","ssh",,NULL);
-           //break; // Son process will not fork again
+           if ( execvp(newargv[0],newargv) )
+                printf("execv failed with error %d %s\n",errno,strerror(errno));
 
       	} else  if(pid > 0) { /* pere */
       	   /* fermeture des extremites des tubes non utiles */
@@ -101,7 +132,7 @@ int main(int argc, char *argv[])
            close(pipe_stdout[1]);
 
            // TODO enlever
-           int PIPE_SIZE = 100;
+
            char buffer[PIPE_SIZE];
            read(pipe_stdout[0],buffer,PIPE_SIZE);
            printf("%s\n",buffer );

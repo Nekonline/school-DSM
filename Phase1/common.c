@@ -62,3 +62,54 @@ void print_machine_tab(dsm_proc_conn_t *machine_tab, int nb_machine) {
      printf("Machine [%i]\'s name is %s \n", machine_tab[i].rank, machine_tab[i].name);
    }
 }
+
+
+void init_serv_address(struct sockaddr_in *serv_addr_ptr) {
+  memset(serv_addr_ptr, 0, sizeof(struct sockaddr_in));
+  serv_addr_ptr->sin_family = AF_INET;
+  serv_addr_ptr->sin_addr.s_addr = htonl(INADDR_ANY);  //INADDR_ANY : all interfaces - not just "localhost", multiple network interfaces OK
+  serv_addr_ptr->sin_port = 0;              /* bind() will choose a random port*/
+}
+
+int create_socket() {
+  int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);   //Sockets config: Blocking  //Possible to add SO_REUSEADDR with setsockopt() during dev phase testing...etc
+  if (sockfd < 0) {
+    ERROR_EXIT("Error - socket opening");
+  }
+
+  return sockfd;
+}
+
+void do_bind(int sockfd, struct sockaddr_in *serv_addr_ptr) {
+  if ( bind(sockfd, (struct sockaddr *) serv_addr_ptr, sizeof(struct sockaddr_in))<0 ) {  //cast generic struct
+    ERROR_EXIT("Error - bind");
+  }
+}
+
+void do_send(int sockfd, char *buffer, int buffer_size) {
+  int progress = 0; //total sent
+  int sent = 0; //each try
+  do {
+    if ( (sent = send(sockfd, buffer+sent, buffer_size-sent, 0)) < 0 ) {
+      ERROR_EXIT("Error - send");
+    }
+    progress += sent;
+  } while(progress != buffer_size);
+}
+
+int do_recv(int sockfd, char *buffer, int buffer_size) {
+  int progress = 0; //total sent
+  int read = 0; //each try
+  do {
+    if ( (read = recv(sockfd, buffer+read, buffer_size-read, 0)) < 0 ) {
+      ERROR_EXIT("Error - recv");
+    }
+    else if(read == 0) {  //Connection closed abruptly by remote peer, receiving 0 bytes will have the same effect
+      close(sockfd);
+      return -1; //CLOSE_ABRUPT;
+    }
+    progress += read;
+  } while(progress != buffer_size);
+
+  return progress;
+}
