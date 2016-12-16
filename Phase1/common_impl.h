@@ -24,6 +24,9 @@
 #define ARG_NAME_SIZE 30
 #define PIPE_SIZE 300
 #define BUFFER_SIZE 1024
+#define PORT_SIZE 30
+#define HOSTNAME_SIZE 128
+
 
 
 

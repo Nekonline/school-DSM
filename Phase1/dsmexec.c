@@ -1,11 +1,5 @@
 #include "common_impl.h"
 
-/* variables globales */
-
-/* un tableau gerant les infos d'identification */
-/* des processus dsm */
-dsm_proc_t *proc_array = NULL;
-
 /* le nombre de processus effectivement crees */
 volatile int num_procs_create = 0;
 
@@ -16,10 +10,44 @@ void usage(void)
   exit(EXIT_FAILURE);
 }
 
-void sigchld_handler(int sig)
+void sigchld_handler(int sig) //TODO
 {
    /* on traite les fils qui se terminent */
    /* pour eviter les zombies */
+}
+
+
+void create_newargv(char **newargv, char ** argv,int argc, char * distant_hostname, char * local_hostname, char * str_port) {
+    // argv = {dsmexec machine_file truc arg1 arg2 .... argn}
+    // newargv = { "ssh","hostname distant", "dsmwrap", "port", "ip local", 'path", "cmd", "arg1", ..., "argn", NULL}
+    char dsmwrap_path[BUFFER_SIZE],  bin_path[BUFFER_SIZE];
+    int k;
+
+   //
+
+   /* First arg is the cmd ssh */
+   newargv[0] = "ssh";
+   /* Second arg is the hostname of the distant machine*/
+   newargv[1] = distant_hostname; //machine_tab[i].connect_info.name;
+   /* Third arg is dsmwrap */
+   getcwd(dsmwrap_path,BUFFER_SIZE);
+   strcat(dsmwrap_path,"/dsmwrap");
+   newargv[2] = dsmwrap_path;
+   /* 4th arg is the port */
+   newargv[3] = str_port;
+   /* 5th arg is the hostname*/
+   newargv[4] = local_hostname;
+   /* 6th arg is the path*/
+
+   getcwd(bin_path,BUFFER_SIZE);
+   newargv[5] = bin_path;
+
+   /* Last arg is NULL */
+   newargv[argc+4] = NULL;
+
+   for(k=0; k < argc-2; k++) {
+      newargv[k+6] =argv[k+2];
+  }
 }
 
 
@@ -30,7 +58,7 @@ int main(int argc, char *argv[])
   } else {
      pid_t pid;
      int num_procs = 0;
-     int i,j,k;
+     int i,j;
      char ip[100];
      memset(&ip, '\0',100);
      /* ------ EXTRACT ARGV DATA-------*/
@@ -51,12 +79,9 @@ int main(int argc, char *argv[])
      int timeout_msecs = -1;
      int ret;
 
-     /* ----- DNS ------*/ //TODO
-     char str_port[15];
-     char hostname[128];
-
-     /*   */
-     char dsmwrap_path[1024]; //TODO
+     /* ----- DNS ------*/
+     char str_port[PORT_SIZE];
+     char hostname[HOSTNAME_SIZE];
 
      /*************************************************************/
      /*Mise en place d'un traitant pour recuperer les fils zombies*/ //TODO
@@ -70,11 +95,12 @@ int main(int argc, char *argv[])
      /* 1- on recupere le nombre de processus a lancer */
      num_procs=count_line(file_name);
      /* 2- on recupere les noms des machines et leur rang dans un tableau de strucure  */
-     dsm_proc_t machine_tab[num_procs]; //TODO
+
+     /* un tableau gerant les infos d'identification */
+     /* des processus dsm */
+     dsm_proc_t machine_tab[num_procs];
      init_machine_tab(file_name, machine_tab, num_procs);
      print_machine_tab(machine_tab, num_procs);
-
-
 
      /*************************************************************/
      /*              création des tableaux de pipe                */
@@ -86,7 +112,6 @@ int main(int argc, char *argv[])
      /*             création de poll                */
      /*************************************************************/
      struct pollfd fds[num_procs*2];
-
 
      /*************************************************************/
      /*            socket - création, bind, listen...             */
@@ -100,17 +125,15 @@ int main(int argc, char *argv[])
      /* + ecoute effective */
      if(listen(master_sockfd, num_procs) < 0)
          ERROR_EXIT("Error - listen");
-
      if (getsockname(master_sockfd, (struct sockaddr *)&serv_addr, &len) == -1){
         ERROR_EXIT("getsockname");
     } else{
-
         gethostname(hostname, sizeof hostname);
         //convertit le port en chaine de caracteres;
-        sprintf(str_port,"%i",ntohs(serv_addr.sin_port));
+        sprintf(str_port,"%d",ntohs(serv_addr.sin_port));
         // ici on a pas encore récupéré l'adresse ip donc affichage -> 0
         hostname_to_ip(hostname , ip);
-        printf("Port number %s et adresse ip %s : %s\n ", str_port, hostname, ip);
+        printf("Port server number %s et adresse ip %s : %s\n ", str_port, hostname, ip);
     }
 
 
@@ -119,10 +142,10 @@ int main(int argc, char *argv[])
      /*************************************************************/
      for(i = 0; i < num_procs ; i++) {
 
-         /* creation du tube pour rediriger stdout */ //TODO faire dees if sur les pipes
-         pipe(pipe_stdout_tab[i].pipefd);
+         /* creation du tube pour rediriger stdout */
+         if (pipe(pipe_stdout_tab[i].pipefd) !=0) ERROR_EXIT("Pipe failed ");
          /* creation du tube pour rediriger stderr */
-         pipe(pipe_err_tab[i].pipefd);
+         if (pipe(pipe_err_tab[i].pipefd) !=0) ERROR_EXIT("Pipe failed ");
 
     	 pid = fork();
     	 if(pid == -1) ERROR_EXIT("fork");
@@ -131,8 +154,6 @@ int main(int argc, char *argv[])
          /*           fils                */
          /*********************************/
     	 if (pid == 0) {
-            sleep(i);
-            printf("\nPROCESSUS [%i]\n",getpid() );
             close(pipe_err_tab[i].pipefd[0]);
             close(pipe_stdout_tab[i].pipefd[0]);
 
@@ -140,44 +161,28 @@ int main(int argc, char *argv[])
                 close(pipe_err_tab[j].pipefd[0]);
                 close(pipe_stdout_tab[j].pipefd[0]);
             }
-      	  //   /* redirection stdout */
-            // dup2(pipe_stdout_tab[i].pipefd[1],STDOUT_FILENO); //  stdout becomes the synonymous with pipe_stdout[1] ;
-      	  //   /* redirection stderr */
-            // dup2(pipe_err_tab[i].pipefd[1],STDERR_FILENO);
+          	 /* redirection stdout */
+             dup2(pipe_stdout_tab[i].pipefd[1],STDOUT_FILENO); //  stdout becomes the synonymous with pipe_stdout[1] ;
+          	 /* redirection stderr */
+             dup2(pipe_err_tab[i].pipefd[1],STDERR_FILENO);
 
             /***********************************************/
-      	    /* Creation du tableau d'arguments pour le ssh */ // TODO faire une fonction
+      	    /* Creation du tableau d'arguments pour le ssh */
             /***********************************************/
 
            // argv = {dsmexec machine_file truc arg1 arg2 .... argn}
-           // newargv = { "ssh","hostname distant", "dsmwrap", "port", "ip local", "cmd", "arg1", ..., "argn", NULL}
-           char *newargv[argc+4];
+           // newargv = { "ssh","hostname distant", "dsmwrap", "port", "ip local", 'path", "cmd", "arg1", ..., "argn", NULL}
+           char *newargv[argc+5];
+           create_newargv(newargv, argv, argc, machine_tab[i].connect_info.name, hostname, str_port);
 
-           /* First arg is the cmd ssh */
-           newargv[0] = "ssh";
-           /* Second arg is the hostname of the distant machine*/
-           newargv[1] = machine_tab[i].connect_info.name;
-           /* Third arg is dsmwrap */
-           getcwd(dsmwrap_path,1024);
-           strcat(dsmwrap_path,"/bin/dsmwrap");
-           newargv[2] = dsmwrap_path;
-           /* 4th arg is the port */
-           newargv[3] = str_port;
-           /* 5th arg is the hostname*/
-           newargv[4] = hostname;
-           /* Last arg is NULL */
-           newargv[argc+3] = NULL;
 
-           for(k=0; k < argc-2; k++) {
-              newargv[k+5] =argv[k+2];
-          }
-          /*
-          for (k=0;k<= argc+3; k++) {
-              if(newargv[k]== NULL)
-               printf("arg [%i] -> NULL\n", k);
-              else
-               printf("arg [%i] = %s\n",k,newargv[k]);
-           } */
+        //   for (k=0;k<= argc+4; k++) {
+        //       if(newargv[k]== NULL)
+        //        printf("arg [%i] -> NULL\n", k);
+        //       else
+        //        printf("arg [%i] = %s\n",k,newargv[k]);
+        //    }
+        //    fflush(stdout);
 
            if ( execvp(newargv[0],newargv) ) {
                 printf("execv failed with error %d %s\n",errno,strerror(errno));
@@ -208,43 +213,61 @@ int main(int argc, char *argv[])
      /*           Network             */
      /*********************************/
 
-     for(i = 0; i < num_procs ; i++){
+     for(i = 0; i < num_procs_create ; i++){
 
         /* on accepte les connexions des processus dsm */
-        printf(" TRY Accept : ok \n");
-
-        printf("master_sockfd : %i\n",master_sockfd );
-        printf("sin_addr : %i\n",serv_addr.sin_addr.s_addr );
-        printf("port : %i\n",serv_addr.sin_port);
-
-
-
         machine_tab[i].connect_info.sockfd = do_accept(master_sockfd, (struct sockaddr*)&serv_addr, &len); //TODO verfifier ernno
-        printf("Accept : ok \n");
 
-
-        /*  On recupere le nom de la machine distante */
+        /*  On recupere le nom de la machine distante */ //TODO
         /* 1- d'abord la taille de la chaine */
         /* 2- puis la chaine elle-meme */
 
         /* On recupere le pid du processus distant  */
         memset(&buffer, '\0', BUFFER_SIZE);
-        //do_recv(machine_tab[i].connect_info.sockfd, buffer,BUFFER_SIZE);
-        //machine_tab[i].pid = atoi(buffer);
-        printf("PID : %i \n",machine_tab[i].pid );
+        do_recv(machine_tab[i].connect_info.sockfd, buffer,BUFFER_SIZE);
+        machine_tab[i].pid = atoi(buffer);
+        //printf("PID : %i \n",machine_tab[i].pid );
 
         /* On recupere le numero de port de la socket */
         /* d'ecoute des processus distants */
+        memset(&buffer, '\0', BUFFER_SIZE);
+        do_recv(machine_tab[i].connect_info.sockfd, buffer,BUFFER_SIZE);
+        machine_tab[i].connect_info.port = atoi(buffer);
+        //printf("Port : %i \n",machine_tab[i].connect_info.port );
+
         }
 
         /* envoi du nombre de processus aux processus dsm*/
+        for(i = 0; i < num_procs ; i++){
+           memset(&buffer, '\0', BUFFER_SIZE);
+           sprintf(buffer,"%i",num_procs_create);
+           do_send(machine_tab[i].connect_info.sockfd, buffer,BUFFER_SIZE);
+        }
 
         /* envoi des rangs aux processus dsm */
+        for(i = 0; i < num_procs ; i++){
+           memset(&buffer, '\0', BUFFER_SIZE);
+           sprintf(buffer,"%i",machine_tab[i].connect_info.rank);
+           do_send(machine_tab[i].connect_info.sockfd, buffer,BUFFER_SIZE);
+        }
+
 
         /* envoi des infos de connexion aux processus */
+        for(i = 0; i < num_procs ; i++){
+           memset(&buffer, '\0', BUFFER_SIZE);
+           memcpy(&buffer, &machine_tab , sizeof(buffer));
+           do_send(machine_tab[i].connect_info.sockfd, buffer,BUFFER_SIZE);
+        }
 
-        /* gestion des E/S : on recupere les caracteres */
-        /* sur les tubes de redirection de stdout/stderr */
+
+
+
+    /*********************************/
+    /*       STDOUT/STDERR           */
+    /*********************************/
+
+    /* gestion des E/S : on recupere les caracteres */
+    /* sur les tubes de redirection de stdout/stderr */
      while(1) {
          ret = poll(fds, num_procs_create, timeout_msecs);
          if (ret > 0) {
@@ -254,6 +277,7 @@ int main(int argc, char *argv[])
                       memset(&buffer,'\0',BUFFER_SIZE);
                       read(pipe_stdout_tab[i].pipefd[0],buffer,BUFFER_SIZE);
                       fprintf(stdout, "[proc %i : %s: stdout] %s\n", i, machine_tab[i].connect_info.name,buffer);
+                      fflush(stdout);
                  }
              }
          }
@@ -267,6 +291,7 @@ int main(int argc, char *argv[])
                     memset(&buffer,'\0',BUFFER_SIZE);
                     read(pipe_err_tab[i-num_procs].pipefd[0],buffer,BUFFER_SIZE);
                     fprintf(stdout, "[proc %i : %s: stderr] %s\n", i-num_procs, machine_tab[i - num_procs].connect_info.name, buffer);
+                    fflush(stdout);
                 }
             }
         }
@@ -290,27 +315,3 @@ int main(int argc, char *argv[])
   }
    exit(EXIT_SUCCESS);
 }
-
-/*ret = poll(fds, num_procs_create*, timeout_msecs);
-if (ret > 0) {
-     // An event on one of the fds has occurred.
-     for (i=0; i< 2*num_procs_create; i++) {
-         if (fds[i].revents & POLLIN) {
-
-             memset(&buffer,'\0',BUFFER_SIZE);
-
-
-
-             //read(pipe_stdout_tab[i].pipefd[0],buffer,BUFFER_SIZE);
-             if (i<num_procs_create){
-                 read(pipe_stdout_tab[i].pipefd[0],buffer,BUFFER_SIZE);
-                 fprintf(stdout, "[proc %i : %s: stdout] %s\n", i, machine_tab[i].name,buffer);
-            } else {
-                read(pipe_err_tab[i-num_procs].pipefd[0],buffer,BUFFER_SIZE);
-                fprintf(stdout, "[proc %i : %s: stderr] %s\n", i-num_procs, machine_tab[i - num_procs].name, buffer);
-
-            }
-        }
-    }
-
-}/*/

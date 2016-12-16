@@ -1,17 +1,5 @@
 #include "common_impl.h"
 
-int creer_socket(int prop, int *port_num)
-{
-   int fd = 0;
-
-   /* fonction de creation et d'attachement */
-   /* d'une nouvelle socket */
-   /* renvoie le numero de descripteur */
-   /* et modifie le parametre port_num */
-
-   return fd;
-}
-
 /* Vous pouvez ecrire ici toutes les fonctions */
 /* qui pourraient etre utilisees par le lanceur */
 /* et le processus intermediaire. N'oubliez pas */
@@ -23,8 +11,10 @@ int count_line(char * filename) {
   int compteur = 0;
   int buffer_size = 100;
   char str[buffer_size];
-
-  fd=fopen(filename,"r");
+  char path[100];
+  sprintf(path,"../%s",filename);
+  fd=fopen(path,"r");
+  printf(" path = %s \n", path);
   if(fd == NULL) {
       ERROR_EXIT("Error opening file")
    }
@@ -39,8 +29,9 @@ int count_line(char * filename) {
 void init_machine_tab( char * filename, dsm_proc_t *machine_tab, int nb_machine) {
   FILE *fd = NULL;
   int i, j;
-
-  fd=fopen(filename,"r");
+  char path[100];
+  sprintf(path,"../%s",filename);
+  fd=fopen(path,"r");
   if(fd == NULL) {
       ERROR_EXIT("Error opening file")
    }
@@ -62,6 +53,7 @@ void print_machine_tab(dsm_proc_t *machine_tab, int nb_machine) {
   int i;
   for (i=0 ; i<nb_machine ; i++) {
      printf("Machine [%i]\'s name is %s \n", machine_tab[i].connect_info.rank, machine_tab[i].connect_info.name);
+    fflush(stdout);
    }
 }
 
@@ -73,14 +65,17 @@ void init_serv_address(struct sockaddr_in *serv_addr_ptr) {
   serv_addr_ptr->sin_port = 0;              /* bind() will choose a random port*/
 }
 
-void init_client_address(struct sockaddr_in *serv_addr_ptr, char *port,char *adresse_ip) {
+void init_client_address(struct sockaddr_in * serv_addr_ptr, char *port,char *adresse_ip) {
     struct in_addr addr_client;
-    inet_aton(adresse_ip,&addr_client);
+
 
     memset(serv_addr_ptr, 0, sizeof(struct sockaddr_in));
     serv_addr_ptr->sin_family = AF_INET;
+    //inet_aton(adresse_ip, serv_addr_ptr->sin_addr);
+    inet_aton(adresse_ip,&addr_client);
     serv_addr_ptr->sin_addr.s_addr = addr_client.s_addr;  //INADDR_ANY : all interfaces - not just "localhost", multiple network interfaces OK
-    serv_addr_ptr->sin_port = atoi(port);              /* bind() will choose a random port*/
+    serv_addr_ptr->sin_port = htons(atoi(port));
+    //printf("init_cli -->  PORT client = %i = %s = %d\n", atoi(port), port, ntohs(serv_addr_ptr->sin_port) );
 }
 
 int create_socket() {
